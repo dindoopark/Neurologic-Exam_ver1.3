@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Neuro Check">
+  <meta name="theme-color" content="#0e1e38">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-192.svg">
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+  <title>EICU2 신경학적 검진 v3</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+    html,body,#root{height:100%;background:#060b14}
+    body{font-family:'Pretendard','Noto Sans KR',-apple-system,sans-serif;color:#dde4ee;overflow-x:hidden}
+    ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#1a3050;border-radius:2px}
+    select{-webkit-appearance:none;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%234a6080' fill='none' stroke-width='1.5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px!important}
+    @supports(padding:env(safe-area-inset-bottom)){.bottom-bar{padding-bottom:calc(12px + env(safe-area-inset-bottom))!important}}
+    .tag{display:inline-block;font-size:9px;padding:1px 5px;border-radius:3px;font-weight:700;margin-left:4px;vertical-align:middle}
+    .tag-snubh{background:#0d2818;color:#4caf7a;border:1px solid #1a4030}
+    .tag-opt{background:#1a1008;color:#c09040;border:1px solid #3a2818}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script>
+"use strict";
+const e=React.createElement,{useState,useCallback,useMemo}=React;
+
+// ═══════════════════════════════════════════════
+//  SECTIONS DATA — based on SNUBH 정우진 NP lecture
+// ═══════════════════════════════════════════════
+const SECTIONS=[
+{id:"mse",title:"1. MSE",required:true,items:[
+  {id:"consciousness",label:"의식수준",type:"select",options:["Alert","Drowsy","Stupor","Semi-coma","Coma"],normal:"Alert",
+    info:{meaning:"ARAS와 대뇌 피질의 각성 기능. GCS Eye만으로도 1차 사정 가능.",method:"청각자극(정상→큰 목소리) → 촉각자극(약한→통증)",detail:"Alert: 자발적 각성, O-C 가능\nDrowsy: 자극 시 각성, 곧 졸림. O-C 가능\nStupor: 자발적 운동은 있으나 O-C 불가. 통증에 localize/withdrawal\nSemi-coma: 자발적 운동 없음. 통증에 flexion/extension reflex\nComa: 자발적 운동 없음. 반응 거의 없음. DTR/corneal/light reflex 소실",abnormal:"Stupor↔Semi-coma 구분: 자발적 운동 유무 + localization vs flexion/extension"}},
+  {id:"sedation",label:"Sedation 상태",type:"select",options:["None","Light sedation","Full sedation"],normal:"None",
+    info:{meaning:"진정 약물 사용 시 의식수준 해석에 반드시 반영해야 함.",method:"약물명+용량 괄호 기록. 예: Drowsy mentality (on Dex 0.2)\nFull sedation → MSE: full sedation status (Rocuronium 0.3, Propofol 3)",abnormal:"Light sedation인데 Semi-coma → 약물만으로 설명 안 됨, 추가 평가 필요!"}},
+  {id:"sedation_detail",label:"진정 약물/용량",type:"text",placeholder:"예: Dex 0.2, Propofol 3",normal:"",condition:"sedation"},
+  {id:"gcs_e",label:"GCS - Eye",type:"select",options:["E4 (자발적)","E3 (소리에)","E2 (통증에)","E1 (없음)"],normal:"E4 (자발적)",
+    info:{meaning:"개안 반응. 가장 BEST 점수를 줘야 함.",method:"정상 목소리 → 큰 목소리 → 어깨 흔들기 → 통증자극 순서로 자극 강도 올리기"}},
+  {id:"gcs_v",label:"GCS - Verbal",type:"select",options:["V5 (지남력 정상)","V4 (혼돈 대화)","V3 (부적절한 단어)","V2 (신음소리)","V1 (없음)","VT (기관삽관)"],normal:"V5 (지남력 정상)",
+    info:{meaning:"언어 반응. 인튜베이션 시 VT로 기록.",detail:"V5: 지남력 정상\nV4: 혼돈 대화 (알아들을 수 없는 말)\nV3: 부적절한 단어\nV2: 신음소리 ('으', '아')\nV1: 무반응\nVT: 기관삽관 상태"}},
+  {id:"gcs_m",label:"GCS - Motor",type:"select",options:["M6 (명령 수행)","M5 (통증 위치 인식)","M4 (회피 반응)","M3 (이상 굴곡)","M2 (이상 신전)","M1 (없음)"],normal:"M6 (명령 수행)",
+    info:{meaning:"운동 반응. 가장 BEST(좋은 쪽) 점수를 기록.",detail:"M6: Obey command\nM5: Localizing pain (통증 부위로 손이 감)\nM4: Normal flexion/Withdrawal\nM3: Abnormal flexion (decorticate)\nM2: Extension (decerebrate)\nM1: None"}},
+  {id:"obey_command",label:"O-C 단계",type:"select",options:["3-step 가능","2-step 가능","1-step 가능","불가"],normal:"3-step 가능",
+    info:{meaning:"명령 수행 능력의 세분화. 전두엽 기능+이해력 종합 평가.",method:"1-step: '눈 감아보세요' (단순 지시 1개)\n2-step: '눈 감고 팔 들어보세요' (2가지 동작)\n3-step: '눈 감고 혀 내밀고 손 들어보세요' (3가지 동작)",abnormal:"O-C 기능 저하 추적이 중요. 이전과 비교하여 단계 변화 확인."}},
+  {id:"orientation_t",label:"Orientation - Time",type:"toggle",normal:true,
+    info:{meaning:"가장 먼저 소실, 가장 늦게 회복. 년/월/일/요일 확인.",method:"\"오늘 몇 년도, 몇 월, 며칠이에요?\" — 정확한 답변 기록 가능\n(예: 2026년 3월은 아는데 날짜 모름 → 부분 소실 기록)"}},
+  {id:"orientation_p",label:"Orientation - Place",type:"toggle",normal:true,
+    info:{meaning:"장소 지남력. 병원 이름까지 정확히 확인.",method:"\"여기 어디예요? 집이에요, 병원이에요?\" → 병원이면 \"어느 병원이에요?\"\n※ 다른 병원 이름 대면 place 저하 (익숙한 곳으로 대답하는 경향)"}},
+  {id:"orientation_person",label:"Orientation - Person",type:"toggle",normal:true,
+    info:{meaning:"가장 늦게 소실. 본인 이름, 나이 확인.",method:"\"성함이 어떻게 되세요? 나이가 어떻게 되세요?\""}},
+  {id:"language",label:"Language Function",type:"select",options:["Intact","Dysarthria","Aphasia","Only sounds","Hoarseness","Mute","Intubated state"],normal:"Intact",
+    info:{meaning:"Dysarthria 유무 먼저 확인 → Aphasia 있으면 세부 평가.",method:"1) Dysarthria 유무 먼저\n2) Only sounds: 신음만 가능\n3) Hoarseness: 신경 눌려서 쉰 목소리\n4) Aphasia → 아래 F/C/R/N으로 세부 평가\n5) Intubated → 'intubated state'로 기록"}},
+  {id:"lang_fluency",label:" ↳ Fluency (유창성)",type:"toggle",normal:true,condition:"aphasia",
+    info:{meaning:"유창하게 말하는지. Broca(비유창) vs Wernicke(유창하나 엉뚱한 말)"}},
+  {id:"lang_comprehension",label:" ↳ Comprehension (이해력)",type:"toggle",normal:true,condition:"aphasia",
+    info:{meaning:"말을 이해하는지. Wernicke → 이해력 저하 두드러짐."}},
+  {id:"lang_repetition",label:" ↳ Repetition (따라말하기)",type:"select",options:["(+) 가능","(±) 부분 가능","(-) 불가"],normal:"(+) 가능",condition:"aphasia",
+    info:{meaning:"7음절 테스트: '분당서울대병원' 따라하기.",method:"따라하기 가능 → (+)\n3음절까지만 → (±) 3음절 이상 불가\n5음절까지 가능 → (±) 7음절 이상 불가\n전혀 불가 → (-)"}},
+  {id:"lang_repetition_detail",label:" ↳ Repetition 세부",type:"text",placeholder:"예: 5음절까지 가능, 7음절 이상 불가",normal:"",condition:"aphasia"},
+  {id:"lang_naming",label:" ↳ Naming (이름대기)",type:"toggle",normal:true,condition:"aphasia",
+    info:{meaning:"물건 이름 대기. 시계, 핸드폰 등 쉬운 것으로. 절대 어려운 것 물어보면 안 됨!"}},
+]},
+{id:"cne",title:"2. CNE",required:true,items:[
+  {id:"pupil_shape",label:"Pupil Shape",cn:"CN II,III",type:"select",options:["Isocoric","Anisocoric (Lt>Rt)","Anisocoric (Rt>Lt)","Irregular"],normal:"Isocoric",
+    info:{meaning:"동공 대칭 여부. 뇌압상승의 조기 징후.",abnormal:"일측 산동 + 대광반사 소실 → uncal herniation!"}},
+  {id:"pupil_size",label:"Pupil Size (mm)",cn:"CN II,III",type:"text",placeholder:"예: 3/3",normal:""},
+  {id:"light_reflex_l",label:"Light Reflex - Lt",cn:"CN II→III",type:"select",options:["Prompt","Sluggish","Fixed"],normal:"Prompt"},
+  {id:"light_reflex_r",label:"Light Reflex - Rt",cn:"CN II→III",type:"select",options:["Prompt","Sluggish","Fixed"],normal:"Prompt"},
+  {id:"npi",label:"NPi (Pupillometer)",cn:"CN II→III",type:"text",placeholder:"예: Rt 4.5 / Lt 4.1",normal:"",
+    info:{meaning:"동공 수축 정도 정량적 점수. Penlight 대광반사와 상호 보완.",method:"NPi 3.0~4.9: Normal/Brisk\nNPi <3.0: Abnormal/Sluggish\nNPi 0: Non-reactive\n좌우 차이 ≥0.7 → 비정상",abnormal:"NPi 추세 변화가 중요. 떨어지는 추세 → 뇌압상승 조기 경고!"}},
+  {id:"eom",label:"EOM (안구운동)",cn:"CN III,IV,VI",type:"select",options:["Full range w/o nystagmus","Full range with nystagmus","Limitation (+)","Gaze preference (Lt)","Gaze preference (Rt)","Uncheckable → VOR 확인"],normal:"Full range w/o nystagmus",
+    info:{meaning:"O-C 되는 환자: '제 손 따라와보세요' → 좌우 위아래 6방향.\nO-C 안 되면 → VOR(Doll's eye)로 넘어가기.",detail:"Gaze preference ≠ Deviation!\nPreference: VOR로 교정 가능 → 대뇌 병변\nDeviation: VOR로 교정 안 됨 → 뇌간 병변",abnormal:"※ Fitting 환자 VOR 시 C-spine 주의!"}},
+  {id:"vor",label:"VOR (Doll's eye)",cn:"뇌간",type:"select",options:["해당없음 (EOM 가능)","Both intact (+/+)","Rt only (+/-)","Lt only (-/+)","Both absent (-/-)"],normal:"해당없음 (EOM 가능)",
+    info:{meaning:"O-C 불가 환자에서 뇌간 기능 평가. 머리를 빠르게 돌렸을 때 눈이 반대쪽을 향하면 정상.",method:"머리를 빠르게 좌우로 돌리기 → 눈이 반대방향으로 움직이면 intact\n양쪽 다 해보기. 한쪽만 될 수 있음.",abnormal:"양측 absent → 심한 뇌간 손상. Brain death 평가 항목."}},
+  {id:"vfd",label:"VFD (시야결손)",cn:"CN II",type:"select",options:["(-) 없음","(+) Lt VFD","(+) Rt VFD","(+) Lt homonymous hemianopia","Uncheckable"],normal:"(-) 없음",
+    info:{meaning:"Alert → Finger count test (4분면)\nO-C 불가 → Visual threatening\n※ 소리나 바람 나지 않게 주의!",method:"Finger count: '제 코만 보세요' → 한쪽 눈 가리고 4분면에서 손가락 수 물어보기\nVisual threatening: 바깥쪽에서 안쪽으로 위협 → 찡그림 반응 확인",detail:"바깥쪽(temporal)이 안 보이는 경우 흔함.\nHomonymous hemianopia: 양안의 같은 쪽 시야 소실"}},
+  {id:"vfd_method",label:" ↳ VFD 확인방법",type:"select",options:["Finger count test","Visual threatening","Uncheckable"],normal:"Finger count test"},
+  {id:"facial_expression",label:"Facial Expression",cn:"CN VII",type:"select",options:["Intact (대칭)","Lt central type weakness","Rt central type weakness","Lt peripheral type weakness","Rt peripheral type weakness","Uncheckable → pain grimace 확인"],normal:"Intact (대칭)",
+    info:{meaning:"Central: 이마 보존, 아래만 마비 → 반대쪽 대뇌\nPeripheral: 이마 포함 전체 → Bell's palsy/뇌간",method:"O-C 가능: '이 해보세요' → '눈 꽉 감아보세요' → '이마 주름 만들어보세요'\nO-C 불가: 통증 자극(목덜미 꼬집기, 인중 누르기) → grimace 대칭 관찰"}},
+  {id:"facial_sense",label:"Facial Sense (V1/V2/V3)",cn:"CN V",type:"select",options:["Symm, intact","Decreased (Lt)","Decreased (Rt)","Uncheckable"],normal:"Symm, intact",
+    info:{meaning:"O-C 가능한 환자에서만 정확. V1(이마)/V2(볼)/V3(턱) 좌우 비교.",method:"'오른쪽 왼쪽 똑같이 느껴지세요?' → '다르다'면 → '오른쪽 100%면 왼쪽 몇 %?'\nV1,2,3 따로 평가. 일관되지 않을 수 있음."}},
+  {id:"mastication",label:"Mastication (저작)",cn:"CN V",type:"select",options:["Intact","Weak","Uncheckable (식사 안 함)"],normal:"Intact",
+    info:{meaning:"식사하는 환자에서만 확인. 식사 안 하면 생략 가능.",method:"이 악물기, 씹는 기능 확인"}},
+  {id:"tongue",label:"Tongue Deviation",cn:"CN XII",type:"select",options:["(-) 없음","(+) Lt","(+) Rt","Uncheckable (intubated)"],normal:"(-) 없음",
+    info:{meaning:"혀는 damaged side로 편위. 인튜베이션 시 확인 불가.",method:"'혀 내밀어보세요, 좌우로 움직여보세요'"}},
+  {id:"uvula",label:"Uvular Deviation",cn:"CN IX,X",type:"select",options:["(-) 없음","(+) Lt","(+) Rt","Uncheckable (intubated)"],normal:"(-) 없음",
+    info:{meaning:"목젖은 strong side(정상쪽)로 편위! (혀와 반대 방향 규칙)",method:"'아~ 해보세요' + 펜라이트로 목젖·구개궁 관찰"}},
+  {id:"spe",label:"SPE (연구개 거상)",cn:"CN X",type:"select",options:["+/+ (정상)","-/+ (Lt weak)","+/- (Rt weak)","-/-","Uncheckable (intubated)"],normal:"+/+ (정상)",
+    info:{meaning:"'아~' 할 때 연구개 아치가 양쪽 동일하게 올라가는지. 안 올라가는 쪽이 병변.",method:"Uvular deviation과 함께 확인. 한쪽 아치만 처져있으면 해당 측 CN X 약화."}},
+  {id:"gag",label:"Gag Reflex",cn:"CN IX→X",type:"toggle",normal:true,
+    info:{meaning:"구역반사. 기본 확인 항목. 설압자로 인두 후벽 자극.",abnormal:"소실 → 흡인 위험! 경구 식이 전 필수 확인."}},
+  {id:"corneal",label:"Corneal Reflex (필요시)",cn:"CN V→VII",type:"select",options:["해당없음","Both (+)","Rt only","Lt only","Both (-)"],normal:"해당없음",
+    info:{meaning:"의식 저하 환자에서 뇌간 기능 추가 평가. 멸균거즈/알코올솜으로 눈에 살짝 대기.",abnormal:"Gag(-) + Corneal(-) → 심한 뇌간 손상 시사. 하지만 Corneal만 남아있을 수 있음."}},
+  {id:"cough",label:"Cough Reflex (필요시)",cn:"CN X",type:"select",options:["해당없음","Vigorous","Moderate","Weak","(-)"],normal:"해당없음",
+    info:{meaning:"O-C 가능 → '기침해보세요'. 불가 → 석션 시 반응으로 확인.",method:"Vigorous: 일반인처럼 강한 기침\nModerate: 중등도\nWeak: 약한 기침만\n(-): 기침 반응 없음"}},
+]},
+{id:"motor",title:"3. Motor",required:true,items:[
+  {id:"motor_ru",label:"RUE (우측 상지)",type:"select",options:["5","4+","4","4-","3","2","1","0"],normal:"5",
+    info:{meaning:"MRC grade. +/- 기준은 검사자 판단.",detail:"5: 정상(중력+강한저항)\n4+: 강한저항에 약간 밀림\n4: 중력+약한저항\n4-: 약한저항에도 밀림\n3: 중력 극복(팔꿈치 침대에서 안 떨어짐)\n2: 중력 제거시만 가능(수평운동)\n1: 근수축만\n0: 완전 마비"}},
+  {id:"motor_lu",label:"LUE (좌측 상지)",type:"select",options:["5","4+","4","4-","3","2","1","0"],normal:"5"},
+  {id:"motor_rl",label:"RLE (우측 하지)",type:"select",options:["5","4+","4","4-","3","2","1","0"],normal:"5"},
+  {id:"motor_ll",label:"LLE (좌측 하지)",type:"select",options:["5","4+","4","4-","3","2","1","0"],normal:"5"},
+  {id:"motor_note",label:"Motor 비고",type:"text",placeholder:"예: Rt side weakness noted",normal:""},
+  {id:"rigidity",label:"Rigidity (강직)",type:"toggle",normal:false,invertLabel:true,
+    info:{meaning:"추체외로(기저핵). 모든 방향에 일정한 저항. 스프링처럼 늘리든 줄이든 빡빡함.",method:"천천히 수동운동. Flexion/Extension 모두 일정한 저항 → Rigidity\n부위 기록: 예) Rigidity(+) on Rt UE, neck"}},
+  {id:"rigidity_site",label:" ↳ Rigidity 부위",type:"text",placeholder:"예: Rt UE, neck",normal:"",condition:"rigidity"},
+  {id:"spasticity",label:"Spasticity (경직)",type:"select",options:["(-) 없음","(+) Lt side","(+) Rt side","(+) Both"],normal:"(-) 없음",
+    info:{meaning:"추체로(UMN). 빠르게 움직이면 더 빡빡 + 갑자기 풀림(clasp-knife).",detail:"Rigidity vs Spasticity 구분:\n- Rigidity: 속도 무관, 전방향 일정 (추체외로)\n- Spasticity: 빠를수록 심함, 한방향, 갑자기 풀림 (추체로)"}},
+]},
+{id:"sensory",title:"4. Sensory",required:true,items:[
+  {id:"sensory_method",label:"평가 방법",type:"select",options:["직접 확인 (O-C 가능)","Noxious stimuli 반응","Uncheckable"],normal:"직접 확인 (O-C 가능)",
+    info:{meaning:"O-C 가능 → 촉각 좌우 비교 + 퍼센트\nO-C 불가 → 유해자극 반응으로 평가\n확인 불가 → Uncheckable",method:"O-C 가능: '오른쪽 100%면 왼쪽 몇 %?' (V1/V2/V3처럼)\nO-C 불가: 양측 통증 자극 → 반응 차이 관찰 (얼굴 찡그림, 소리, 움직임)"}},
+  {id:"touch",label:"Touch (촉각)",type:"select",options:["Symm, intact","Lt decreased","Rt decreased","Uncheckable"],normal:"Symm, intact"},
+  {id:"touch_detail",label:" ↳ 촉각 세부",type:"text",placeholder:"예: Lt 60%, Rt 100%",normal:""},
+  {id:"pain",label:"Pain (통각)",type:"select",options:["Symm, intact","Lt decreased","Rt decreased","Uncheckable"],normal:"Symm, intact"},
+  {id:"noxious_response",label:"Noxious stimuli 반응",type:"select",options:["해당없음","Responsive, symmetric","Responsive, asymmetric (Rt>Lt)","Responsive, asymmetric (Lt>Rt)","Not responsive"],normal:"해당없음",
+    info:{meaning:"O-C 불가 시 유해자극에 대한 반응으로 감각 평가.",method:"양측 통증 자극 → 반응 차이 비교. Motor 저하와 무관하게 얼굴/소리 반응도 관찰 가능."}},
+]},
+// ── 5,6,7: OPTIONAL (SNUBH NP 기준 안 함) ──
+{id:"dtr",title:"5. DTR (선택)",required:false,snubhNote:"SNUBH 기준: 전문간호사 미시행 (1~4번만 수가 산정)",items:[
+  {id:"biceps",label:"Biceps",segment:"C5-C6",type:"select",options:["0","+ (감소)","++ (정상)","+++ (항진)","++++ (클로누스)"],normal:"++ (정상)"},
+  {id:"knee",label:"Knee",segment:"L3-L4",type:"select",options:["0","+ (감소)","++ (정상)","+++ (항진)","++++ (클로누스)"],normal:"++ (정상)"},
+  {id:"toe_sign",label:"Toe Sign",type:"select",options:["Both flexor","Lt extensor (+)","Rt extensor (+)","Both extensor (+)"],normal:"Both flexor"},
+]},
+{id:"cerebellar",title:"6. Cerebellar (선택)",required:false,snubhNote:"SNUBH 기준: 전문간호사 미시행",items:[
+  {id:"ftn",label:"FTN",type:"select",options:["Intact","Dysmetria (Lt)","Dysmetria (Rt)","Uncheckable"],normal:"Intact"},
+  {id:"ram",label:"RAM",type:"select",options:["Intact","Dysdiadochokinesia (Lt)","Dysdiadochokinesia (Rt)","Uncheckable"],normal:"Intact"},
+  {id:"hts",label:"HTS",type:"select",options:["Intact","Abnormal (Lt)","Abnormal (Rt)","Uncheckable"],normal:"Intact"},
+]},
+{id:"gait",title:"7. Gait (선택)",required:false,snubhNote:"SNUBH 기준: 전문간호사 미시행",items:[
+  {id:"gait_walk",label:"Gait",type:"select",options:["Intact","Ataxic","Spastic","Steppage","Uncheckable (bed rest)"],normal:"Intact"},
+  {id:"tandem",label:"Tandem Gait",type:"select",options:["Intact","Abnormal","Uncheckable"],normal:"Intact"},
+  {id:"romberg",label:"Romberg",type:"select",options:["Negative","Positive (+)","Uncheckable"],normal:"Negative"},
+]},
+];
+
+// ═══════════════════════════════════════════════
+//  EMR FORMAT GENERATOR — 강의 기반 표기법
+// ═══════════════════════════════════════════════
+function genEMR(v){
+  const g=id=>v[id], h=id=>v[id]!==undefined&&v[id]!=="", lines=[];
+
+  // 1. MSE
+  if(h("consciousness")){
+    let mse="1. MSE: ";
+    const c=g("consciousness").toLowerCase();
+    // sedation status
+    if(h("sedation")&&g("sedation")!=="None"){
+      if(g("sedation")==="Full sedation"){
+        mse+="full sedation status";
+        if(h("sedation_detail")) mse+=" ("+g("sedation_detail")+")";
+      } else {
+        mse+=c+" mentality";
+        if(h("sedation_detail")) mse+=" (on "+g("sedation_detail")+")";
+      }
+    } else {
+      mse+=c;
+    }
+    lines.push(mse);
+
+    // GCS
+    if(h("gcs_e")||h("gcs_v")||h("gcs_m")){
+      const ge=h("gcs_e")?g("gcs_e").split(" ")[0]:"?";
+      const gv=h("gcs_v")?g("gcs_v").split(" ")[0]:"?";
+      const gm=h("gcs_m")?g("gcs_m").split(" ")[0]:"?";
+      lines.push("   GCS: "+ge+"/"+gv+"/"+gm);
+    }
+
+    // O-C
+    if(h("obey_command")&&g("obey_command")!=="불가"){
+      lines.push("   "+g("obey_command")+" O-C possible");
+    } else if(g("obey_command")==="불가"){
+      lines.push("   O-C: unable");
+    }
+
+    // Orientation
+    if(h("orientation_t")||h("orientation_p")||h("orientation_person")){
+      const ot=h("orientation_t")?(g("orientation_t")?"+":"-"):"?";
+      const op=h("orientation_p")?(g("orientation_p")?"+":"-"):"?";
+      const opr=h("orientation_person")?(g("orientation_person")?"+":"-"):"?";
+      lines.push("   Oriented to T/P/P ("+ot+"/"+op+"/"+opr+")");
+    }
+
+    // Language
+    if(h("language")){
+      const lang=g("language");
+      if(lang==="Aphasia"&&(h("lang_fluency")||h("lang_comprehension")||h("lang_repetition")||h("lang_naming"))){
+        let parts=[];
+        if(h("lang_fluency")) parts.push("Fluency("+(g("lang_fluency")?"+":"-")+")");
+        if(h("lang_comprehension")) parts.push("Comp("+(g("lang_comprehension")?"+":"-")+")");
+        if(h("lang_repetition")){
+          const rv=g("lang_repetition");
+          let rs=rv==="(+) 가능"?"+":rv==="(-) 불가"?"-":"±";
+          parts.push("Rep("+rs+")");
+        }
+        if(h("lang_naming")) parts.push("Naming("+(g("lang_naming")?"+":"-")+")");
+        lines.push("   Language function: aphasia — "+parts.join(", "));
+        if(h("lang_repetition_detail")) lines.push("     ("+g("lang_repetition_detail")+")");
+      } else if(lang==="Intubated state"){
+        lines.push("   Language function: intubated state");
+      } else {
+        lines.push("   Language function: "+lang.toLowerCase());
+      }
+    }
+    lines.push("");
+  }
+
+  // 2. CNE
+  const cneItems=["pupil_shape","eom","facial_expression","gag"];
+  if(cneItems.some(id=>h(id))){
+    lines.push("2. CNE");
+    // Pupil
+    if(h("pupil_shape")){
+      const sm={"Isocoric":"isocoric","Anisocoric (Lt>Rt)":"anisocoric(Lt>Rt)","Anisocoric (Rt>Lt)":"anisocoric(Rt>Lt)","Irregular":"irregular"};
+      const shape=sm[g("pupil_shape")]||g("pupil_shape").toLowerCase();
+      const size=h("pupil_size")?"("+g("pupil_size")+"mm)":"";
+      const isIntact=g("pupil_shape")==="Isocoric"&&g("light_reflex_l")==="Prompt"&&g("light_reflex_r")==="Prompt";
+      let lr="";
+      if(h("light_reflex_l")&&h("light_reflex_r")){
+        const ll=g("light_reflex_l").toLowerCase(),rr=g("light_reflex_r").toLowerCase();
+        lr=ll===rr?"L/R : "+ll:"L: "+ll+" / R: "+rr;
+      }
+      let pl="   Pupil: "+(isIntact?"intact. ":"")+shape+(size?" "+size:"");
+      if(lr) pl+=",  "+lr;
+      lines.push(pl);
+    }
+    // NPi
+    if(h("npi")) lines.push("   NPi: "+g("npi"));
+
+    // EOM
+    if(h("eom")){
+      const ev=g("eom");
+      if(ev==="Uncheckable → VOR 확인"){
+        const vorV=h("vor")?g("vor"):"?";
+        if(vorV!=="해당없음 (EOM 가능)"){
+          lines.push("   EOM: uncheckable → VOR: "+vorV.replace("Both intact ","").replace("Both absent ",""));
+        } else {
+          lines.push("   EOM: uncheckable");
+        }
+      } else {
+        const em={"Full range w/o nystagmus":"full range without nystagmus","Full range with nystagmus":"full range with nystagmus","Limitation (+)":"limitation (+)","Gaze preference (Lt)":"Lt. gaze preference","Gaze preference (Rt)":"Rt. gaze preference"};
+        lines.push("   EOM: "+(em[ev]||ev));
+      }
+    }
+
+    // VFD
+    if(h("vfd")){
+      const vv=g("vfd");
+      let vfdLine="   VFD";
+      if(vv==="(-) 없음") vfdLine+="(-)";
+      else if(vv==="Uncheckable") vfdLine+=": uncheckable";
+      else { vfdLine+=": "+vv.replace("(+) ",""); }
+      if(h("vfd_method")&&g("vfd_method")!=="Uncheckable"&&vv!=="(-) 없음") vfdLine+=" (by "+g("vfd_method").toLowerCase()+")";
+      lines.push(vfdLine);
+    }
+
+    // Facial
+    if(h("facial_expression")){
+      const fe=g("facial_expression");
+      const fm={"Intact (대칭)":"intact","Lt central type weakness":"Lt central type facial weakness","Rt central type weakness":"Rt central type facial weakness","Lt peripheral type weakness":"Lt peripheral type facial weakness","Rt peripheral type weakness":"Rt peripheral type facial weakness","Uncheckable → pain grimace 확인":"pain grimace로 확인"};
+      lines.push("   Facial expression : "+(fm[fe]||fe));
+    }
+    if(h("facial_sense")){
+      const fsm={"Symm, intact":"symm, intact","Decreased (Lt)":"decreased (Lt)","Decreased (Rt)":"decreased (Rt)","Uncheckable":"uncheckable"};
+      lines.push("   Facial sense: "+(fsm[g("facial_sense")]||g("facial_sense")));
+    }
+    if(h("mastication")&&g("mastication")!=="Uncheckable (식사 안 함)") lines.push("   Mastication: "+g("mastication").toLowerCase());
+
+    // Tongue + Uvula + SPE
+    if(h("tongue")||h("uvula")||h("spe")){
+      const parts=[];
+      if(h("tongue")){const t=g("tongue"); if(t!=="Uncheckable (intubated)"){parts.push("Tongue Deviation "+(t==="(-) 없음"?"(-)":t.includes("Lt")?"(+, Lt)":"(+, Rt)"));}}
+      if(h("uvula")){const u=g("uvula"); if(u!=="Uncheckable (intubated)"){parts.push("Uvular Deviation"+(u==="(-) 없음"?"(-)":u.includes("Lt")?"(+, Lt)":"(+, Rt)"));}}
+      if(h("spe")){const sp=g("spe"); if(sp!=="Uncheckable (intubated)"){const spm={"+/+ (정상)":"(+/+)","-/+ (Lt weak)":"(-/+)","+/- (Rt weak)":"(+/-)","-/-":"(-/-)"}; parts.push("SPE"+(spm[sp]||sp));}}
+      if(parts.length>0) lines.push("   "+parts.join("   "));
+      // intubated note
+      const intItems=[g("tongue"),g("uvula"),g("spe")].filter(x=>x&&x.includes("intubated"));
+      if(intItems.length>0&&parts.length===0) lines.push("   Tongue/Uvula/SPE: uncheckable (intubated state)");
+    }
+
+    if(h("gag")) lines.push("   Gag reflex "+(g("gag")?"(+)":"(-)"));
+    // Corneal, Cough
+    if(h("corneal")&&g("corneal")!=="해당없음") lines.push("   Corneal reflex: "+g("corneal"));
+    if(h("cough")&&g("cough")!=="해당없음") lines.push("   Cough reflex: "+g("cough").toLowerCase());
+    lines.push("");
+  }
+
+  // 3. Motor
+  if(h("motor_ru")||h("motor_lu")||h("motor_rl")||h("motor_ll")){
+    lines.push("3. Motor");
+    if(h("motor_ru")||h("motor_lu")) lines.push("    "+(g("motor_ru")||"?")+" / "+(g("motor_lu")||"?"));
+    if(h("motor_rl")||h("motor_ll")) lines.push("    "+(g("motor_rl")||"?")+" / "+(g("motor_ll")||"?"));
+    if(h("rigidity")||h("spasticity")){
+      const rig=h("rigidity")?(g("rigidity")?"+":"-"):"?";
+      const spaV=g("spasticity"); let spa="-";
+      if(spaV&&spaV!=="(-) 없음"){if(spaV.includes("Lt"))spa="Lt+";else if(spaV.includes("Rt"))spa="Rt+";else if(spaV.includes("Both"))spa="+";}
+      lines.push("    Muscle tone: Rigidity/Spasticity("+rig+"/"+spa+")");
+    }
+    if(h("rigidity")&&g("rigidity")&&h("rigidity_site")) lines.push("      Rigidity site: "+g("rigidity_site"));
+    if(h("motor_note")&&g("motor_note")) lines.push("    * "+g("motor_note"));
+    lines.push("");
+  }
+
+  // 4. Sensory
+  if(h("sensory_method")){
+    const sm=g("sensory_method");
+    if(sm==="직접 확인 (O-C 가능)"){
+      if(g("touch")==="Symm, intact"&&g("pain")==="Symm, intact"){
+        lines.push("4. Sensory : symm, intact to touch, pain");
+      } else {
+        lines.push("4. Sensory");
+        if(h("touch")){lines.push("   Touch: "+g("touch").toLowerCase().replace("symm, ","symm, "));}
+        if(h("touch_detail")) lines.push("     ("+g("touch_detail")+")");
+        if(h("pain")) lines.push("   Pain: "+g("pain").toLowerCase());
+      }
+    } else if(sm==="Noxious stimuli 반응"){
+      lines.push("4. Sensory");
+      if(h("noxious_response")&&g("noxious_response")!=="해당없음"){
+        const nr=g("noxious_response");
+        lines.push("   "+nr+" (by noxious stimuli)");
+      }
+    } else {
+      lines.push("4. Sensory : uncheckable");
+    }
+    lines.push("");
+  }
+
+  // 5~7 optional
+  if(h("biceps")||h("knee")||h("toe_sign")){
+    lines.push("5. DTR");
+    const eg=v2=>{if(!v2)return"?";const m=v2.match(/^([0+]+)/);return m?m[1]:v2.split(" ")[0];};
+    const dp=[];if(h("biceps"))dp.push("Biceps: "+eg(g("biceps")));if(h("knee"))dp.push("Knee: "+eg(g("knee")));
+    if(dp.length)lines.push("   "+dp.join("  "));
+    if(h("toe_sign"))lines.push("   Toe sign: "+g("toe_sign").toLowerCase());
+    lines.push("");
+  }
+  if(h("ftn")||h("ram")||h("hts")){
+    lines.push("6. Cerebellar Function Test");
+    if(g("ftn")==="Intact"&&g("ram")==="Intact"&&g("hts")==="Intact") lines.push("   FTN/RAM/HTS: intact");
+    else{const p=[];if(h("ftn"))p.push("FTN: "+(g("ftn")==="Intact"?"intact":g("ftn")));if(h("ram"))p.push("RAM: "+(g("ram")==="Intact"?"intact":g("ram")));if(h("hts"))p.push("HTS: "+(g("hts")==="Intact"?"intact":g("hts")));lines.push("   "+p.join(", "));}
+    lines.push("");
+  }
+  if(h("gait_walk")||h("tandem")||h("romberg")){
+    if(h("gait_walk"))lines.push("7. Gait : "+g("gait_walk").toLowerCase());
+    if(h("tandem"))lines.push("   Tandem gait: "+g("tandem").toLowerCase());
+    if(h("romberg"))lines.push("   Romberg: "+g("romberg").toLowerCase());
+    lines.push("");
+  }
+  // NO 결론 — per SNUBH lecture!
+  return lines.join("\n");
+}
+
+// ═══════════════════════════════════════════════
+//  UI COMPONENTS
+// ═══════════════════════════════════════════════
+function Chk(){return e("svg",{width:14,height:14,viewBox:"0 0 14 14",fill:"none"},e("path",{d:"M2.5 7L5.5 10L11.5 4",stroke:"currentColor",strokeWidth:2,strokeLinecap:"round",strokeLinejoin:"round"}));}
+function Alrt(){return e("svg",{width:14,height:14,viewBox:"0 0 14 14",fill:"none"},e("circle",{cx:7,cy:7,r:5.5,stroke:"currentColor",strokeWidth:1.5}),e("path",{d:"M7 4.5V7.5M7 9.5V9",stroke:"currentColor",strokeWidth:1.5,strokeLinecap:"round"}));}
+function Inf(){return e("svg",{width:12,height:12,viewBox:"0 0 12 12",fill:"none"},e("circle",{cx:6,cy:6,r:5,stroke:"currentColor",strokeWidth:1.2}),e("path",{d:"M6 5.5V8.5M6 3.5V4",stroke:"currentColor",strokeWidth:1.2,strokeLinecap:"round"}));}
+
+function InfoPanel({info}){
+  const s=[{k:"meaning",i:"📘",t:"의미",c:"#5b9bd5"},{k:"method",i:"🔍",t:"검사법/기록법",c:"#66bb6a"},{k:"detail",i:"📋",t:"세부",c:"#ab90d9"},{k:"abnormal",i:"⚠️",t:"이상 시",c:"#e88a50",bg:"rgba(240,80,30,0.04)"}];
+  return e("div",{style:{marginBottom:8,borderRadius:8,overflow:"hidden",border:"1px solid #182840",background:"#080e1a"}},
+    s.filter(x=>info[x.k]).map(x=>e("div",{key:x.k,style:{padding:"8px 10px",borderBottom:"1px solid #121e30",background:x.bg||"transparent"}},
+      e("div",{style:{fontSize:10,fontWeight:800,color:x.c,letterSpacing:0.5,marginBottom:4}},x.i+" "+x.t),
+      e("div",{style:{fontSize:11.5,color:x.k==="abnormal"?"#d0a080":"#a0b4c8",lineHeight:1.6,whiteSpace:"pre-line"}},info[x.k])
+    ))
+  );
+}
+
+// ═══════════════════════════════════════════════
+//  MAIN APP
+// ═══════════════════════════════════════════════
+function App(){
+  const[values,setV]=useState({});
+  const[infos,setI]=useState({});
+  const[collapsed,setC]=useState({dtr:true,cerebellar:true,gait:true});
+  const[copied,setCopied]=useState(false);
+  const[preview,setPreview]=useState(false);
+
+  const sv=useCallback((id,val)=>setV(p=>Object.assign({},p,{[id]:val})),[]);
+  const ti=useCallback((id)=>setI(p=>Object.assign({},p,{[id]:!p[id]})),[]);
+  const tc=useCallback((id)=>setC(p=>Object.assign({},p,{[id]:!p[id]})),[]);
+  const h=id=>values[id]!==undefined&&values[id]!=="";
+
+  const isAbn=(item,val)=>{
+    if(val===undefined||val==="")return null;
+    if(item.type==="toggle")return item.invertLabel?val===true:val===false;
+    return val!==item.normal;
+  };
+
+  const getProg=s=>{const t=s.items.length,c=s.items.filter(i=>h(i.id)).length;return{t,c};};
+  let totC=0,totT=0;SECTIONS.forEach(s=>{const p=getProg(s);totC+=p.c;totT+=p.t;});
+
+  const abnormals=[];
+  SECTIONS.forEach(s=>s.items.forEach(item=>{if(isAbn(item,values[item.id]))abnormals.push({label:item.label,value:item.type==="toggle"?(item.invertLabel?"(+)":"(-)"):values[item.id]});}));
+
+  const reset=()=>setV({});
+  const setNorm=()=>{const n={};SECTIONS.filter(s=>s.required).forEach(s=>s.items.forEach(item=>{
+    if(item.condition)return;
+    if(item.type==="toggle")n[item.id]=item.normal;
+    else if(item.type==="select"&&item.normal)n[item.id]=item.normal;
+  }));setV(n);};
+
+  const summary=useMemo(()=>genEMR(values),[values]);
+  const copy=()=>{navigator.clipboard.writeText(summary).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000);});};
+
+  // Should we show item? (conditional visibility)
+  const showItem=item=>{
+    if(!item.condition)return true;
+    if(item.condition==="sedation")return h("sedation")&&values.sedation!=="None";
+    if(item.condition==="aphasia")return values.language==="Aphasia";
+    if(item.condition==="rigidity")return h("rigidity")&&values.rigidity===true;
+    return true;
+  };
+
+  const pct=totT>0?(totC/totT)*100:0;
+
+  return e("div",{style:{maxWidth:540,margin:"0 auto",padding:"12px 8px 100px"}},
+
+    // Header
+    e("div",{style:{background:"linear-gradient(135deg,#0e1e38,#0a1528)",borderRadius:14,padding:"16px 18px",marginBottom:10,border:"1px solid #1a3050"}},
+      e("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}},
+        e("div",null,
+          e("div",{style:{fontSize:10,color:"#5b9bd5",fontWeight:700,letterSpacing:2,textTransform:"uppercase",marginBottom:3}},"EICU2 Bedside Checklist"),
+          e("div",{style:{fontSize:20,fontWeight:800,color:"#eaf0f8"}},"신경학적 검진 ",e("span",{style:{fontSize:11,fontWeight:500,color:"#6b8aad"}},"v3 · SNUBH기반"))
+        ),
+        e("div",{style:{display:"flex",gap:5}},
+          e("button",{onClick:setNorm,style:{background:"#122440",border:"1px solid #1e4070",borderRadius:7,color:"#7fb8e8",fontSize:11,padding:"5px 10px",cursor:"pointer",fontWeight:600}},"All Normal"),
+          e("button",{onClick:reset,style:{background:"#1e1010",border:"1px solid #4a2020",borderRadius:7,color:"#e88a8a",fontSize:11,padding:"5px 10px",cursor:"pointer",fontWeight:600}},"Reset")
+        )
+      ),
+      e("div",{style:{display:"flex",alignItems:"center",gap:10}},
+        e("div",{style:{flex:1,height:5,background:"#0d1a2e",borderRadius:3,overflow:"hidden"}},
+          e("div",{style:{width:pct+"%",height:"100%",background:"linear-gradient(90deg,#3a8fd4,#4caf7a)",borderRadius:3,transition:"width 0.3s"}})
+        ),
+        e("span",{style:{fontSize:12,color:"#6e8a9e",fontWeight:600}},totC+"/"+totT)
+      )
+    ),
+
+    // Abnormal banner
+    abnormals.length>0&&e("div",{style:{background:"#1a1008",border:"1px solid #4a3018",borderRadius:10,padding:"10px 14px",marginBottom:10}},
+      e("div",{style:{fontSize:11,fontWeight:700,color:"#f0a030",marginBottom:5,display:"flex",alignItems:"center",gap:5}},e(Alrt)," 이상소견 ("+abnormals.length+")"),
+      abnormals.map((f,i)=>e("div",{key:i,style:{fontSize:12,color:"#e8c080",lineHeight:1.7}},"• "+f.label+": ",e("b",null,f.value)))
+    ),
+
+    // Sections
+    SECTIONS.map(section=>{
+      const prog=getProg(section);
+      const isColl=collapsed[section.id];
+      return e("div",{key:section.id,style:{background:"#0b1220",borderRadius:12,marginBottom:8,border:"1px solid #151f30",overflow:"hidden"}},
+        e("button",{onClick:()=>tc(section.id),style:{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 14px",background:"none",border:"none",cursor:"pointer",color:"#dde4ee"}},
+          e("div",{style:{display:"flex",alignItems:"center",gap:6}},
+            e("span",{style:{fontSize:14,fontWeight:700}},section.title),
+            section.required?e("span",{className:"tag tag-snubh"},"필수"):e("span",{className:"tag tag-opt"},"선택")
+          ),
+          e("div",{style:{display:"flex",alignItems:"center",gap:8}},
+            e("span",{style:{fontSize:11,fontWeight:600,color:prog.c===prog.t&&prog.c>0?"#4caf7a":"#4a5568"}},prog.c+"/"+prog.t),
+            e("span",{style:{fontSize:14,transition:"transform 0.2s",transform:isColl?"rotate(-90deg)":"rotate(0)",color:"#4a5568"}},"▾")
+          )
+        ),
+        // SNUBH note for optional sections
+        !isColl&&section.snubhNote&&e("div",{style:{margin:"0 12px 8px",padding:"6px 10px",background:"#0a1818",border:"1px solid #1a3030",borderRadius:6,fontSize:11,color:"#5a9a7a",lineHeight:1.5}},"💡 "+section.snubhNote),
+        !isColl&&e("div",{style:{padding:"0 10px 10px"}},
+          section.items.filter(showItem).map(item=>{
+            const val=values[item.id];
+            const abn=isAbn(item,val);
+            const showInfo=infos[item.id];
+            return e("div",{key:item.id,style:{padding:"8px 10px",marginBottom:4,borderRadius:8,
+              background:abn===true?"rgba(240,80,30,0.06)":abn===false?"rgba(76,175,122,0.05)":"transparent",
+              border:abn===true?"1px solid rgba(240,80,30,0.18)":"1px solid transparent"}},
+              e("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}},
+                e("div",{style:{display:"flex",alignItems:"center",gap:6,flex:1,minWidth:0}},
+                  abn===false&&e("span",{style:{color:"#4caf7a",flexShrink:0}},e(Chk)),
+                  abn===true&&e("span",{style:{color:"#e86040",flexShrink:0}},e(Alrt)),
+                  e("span",{style:{fontSize:13,fontWeight:600,color:"#c8d0dc"}},item.label),
+                  (item.cn||item.segment)&&e("span",{style:{fontSize:9,color:"#5b7a9d",background:"#0d1828",borderRadius:4,padding:"1px 5px",fontWeight:600,flexShrink:0,marginLeft:3}},item.cn||item.segment)
+                ),
+                item.info&&e("button",{onClick:()=>ti(item.id),style:{background:showInfo?"#152a45":"transparent",border:showInfo?"1px solid #1e4070":"1px solid transparent",borderRadius:6,cursor:"pointer",color:showInfo?"#7fb8e8":"#3a5068",padding:"3px 6px",display:"flex",alignItems:"center",fontSize:10,fontWeight:600,flexShrink:0,marginLeft:4}},e(Inf))
+              ),
+              showInfo&&item.info&&e(InfoPanel,{info:item.info}),
+              item.type==="select"&&e("select",{value:val||"",onChange:ev=>sv(item.id,ev.target.value),style:{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid #151f30",background:"#060b14",color:val?(abn?"#e8885a":"#80c4a0"):"#3a5068",fontSize:12,fontWeight:500,outline:"none"}},
+                e("option",{value:""},"-- 선택 --"),item.options.map(o=>e("option",{key:o,value:o},o))
+              ),
+              item.type==="toggle"&&e("div",{style:{display:"flex",gap:6}},
+                [true,false].map(bv=>{const isA=val===bv;const isThisAbn=item.invertLabel?bv===true:bv===false;
+                  return e("button",{key:String(bv),onClick:()=>sv(item.id,bv),style:{flex:1,padding:"7px 0",borderRadius:6,fontSize:12,fontWeight:600,cursor:"pointer",transition:"all 0.15s",
+                    background:isA?(isThisAbn?"rgba(240,80,30,0.12)":"rgba(76,175,122,0.12)"):"#080e1a",
+                    border:isA?(isThisAbn?"1px solid #c06030":"1px solid #4caf7a"):"1px solid #151f30",
+                    color:isA?(isThisAbn?"#e88860":"#6dc09a"):"#3a5068"}},bv?"(+)":"(-)");})
+              ),
+              item.type==="text"&&e("input",{type:"text",placeholder:item.placeholder||"",value:val||"",onChange:ev=>sv(item.id,ev.target.value),style:{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid #151f30",background:"#060b14",color:"#80c4a0",fontSize:12,outline:"none"}})
+            );
+          })
+        )
+      );
+    }),
+
+    // Preview
+    preview&&totC>0&&e("div",{style:{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.85)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16},onClick:()=>setPreview(false)},
+      e("div",{style:{background:"#0b1220",borderRadius:14,padding:"18px 20px",maxWidth:480,width:"100%",maxHeight:"80vh",overflow:"auto",border:"1px solid #1a3050"},onClick:ev=>ev.stopPropagation()},
+        e("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}},
+          e("span",{style:{fontSize:14,fontWeight:700,color:"#7fb8e8"}},"📄 EMR 복사 미리보기"),
+          e("button",{onClick:()=>setPreview(false),style:{background:"none",border:"none",color:"#5a6a7a",fontSize:18,cursor:"pointer"}},"✕")
+        ),
+        e("div",{style:{fontSize:10,color:"#c09040",marginBottom:8,padding:"4px 8px",background:"#1a1008",borderRadius:4}},"⚠️ 결론 미포함 (SNUBH 기준: NP는 결론 기재하지 않음)"),
+        e("pre",{style:{fontFamily:"'D2Coding','Consolas',monospace",fontSize:12.5,color:"#c8d8e8",lineHeight:1.7,whiteSpace:"pre-wrap",wordBreak:"break-word",background:"#060b14",borderRadius:8,padding:"14px 16px",border:"1px solid #151f30",margin:0}},summary),
+        e("div",{style:{display:"flex",gap:8,marginTop:12}},
+          e("button",{onClick:copy,style:{flex:1,background:copied?"#2a6e3a":"linear-gradient(135deg,#1258a8,#0a3a7a)",color:"white",border:"none",borderRadius:10,padding:"12px 0",fontSize:13,fontWeight:700,cursor:"pointer"}},copied?"✓ 복사 완료!":"📋 클립보드에 복사"),
+          e("button",{onClick:()=>setPreview(false),style:{padding:"12px 18px",background:"#151f30",border:"1px solid #1a3050",borderRadius:10,color:"#7a8a9a",fontSize:13,fontWeight:600,cursor:"pointer"}},"닫기")
+        )
+      )
+    ),
+
+    // Bottom bar
+    totC>0&&e("div",{className:"bottom-bar",style:{position:"fixed",bottom:0,left:0,right:0,background:"linear-gradient(to top,#060b14 70%,transparent)",padding:"12px 16px 16px",zIndex:100,display:"flex",justifyContent:"center",gap:8}},
+      e("button",{onClick:()=>setPreview(true),style:{background:"linear-gradient(135deg,#1a3050,#0e1e38)",color:"#7fb8e8",border:"1px solid #1a3a5f",borderRadius:22,padding:"11px 20px",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 4px 16px rgba(0,0,0,0.4)"}},"👁 미리보기"),
+      e("button",{onClick:copy,style:{background:copied?"#2a6e3a":"linear-gradient(135deg,#1258a8,#0a3a7a)",color:"white",border:"none",borderRadius:22,padding:"11px 22px",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 4px 20px rgba(18,88,168,0.4)"}},copied?"✓ 복사됨":"📋 복사")
+    )
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(e(App));
+if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.serviceWorker.register("./sw.js").catch(()=>{});});}
+</script>
+</body>
+</html>

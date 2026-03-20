@@ -1,0 +1,24 @@
+{
+  "name": "EICU2 신경학적 검진",
+  "short_name": "Neuro Check",
+  "description": "EICU2 Bedside 신경학적 검진 체크리스트",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#060b14",
+  "theme_color": "#0e1e38",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icons/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

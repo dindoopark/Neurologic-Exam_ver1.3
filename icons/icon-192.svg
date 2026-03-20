@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
+  <rect width="192" height="192" rx="40" fill="#0e1e38"/>
+  <text x="96" y="72" text-anchor="middle" fill="#5b9bd5" font-family="Arial,sans-serif" font-size="20" font-weight="700" letter-spacing="2">EICU2</text>
+  <text x="96" y="108" text-anchor="middle" fill="#eaf0f8" font-family="Arial,sans-serif" font-size="18" font-weight="800">NEURO</text>
+  <text x="96" y="135" text-anchor="middle" fill="#4caf7a" font-family="Arial,sans-serif" font-size="16" font-weight="600">CHECK</text>
+  <circle cx="96" cy="160" r="6" fill="none" stroke="#5b9bd5" stroke-width="2"/>
+  <path d="M93 160L95.5 162.5L99 158" stroke="#5b9bd5" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
