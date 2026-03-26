@@ -1,4 +1,4 @@
-const CACHE_NAME = 'neuro-check-v2';
+const CACHE_NAME = 'neuro-check-v4';
 const ASSETS = [
   './',
   './index.html',
